@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>High 2s — Big Two</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>High&nbsp;2<span class="suit-s">s</span> <small>· Big Two</small></h1>
+    <p class="tagline">2 &gt; A &gt; K &gt; … &gt; 3 &nbsp;·&nbsp; ♠ &gt; ♥ &gt; ♣ &gt; ♦ &nbsp;·&nbsp; empty your hand first</p>
+    <div id="wallet">Bankroll <span id="bankroll">$0</span></div>
+  </header>
+
+  <main>
+    <!-- ============ LOBBY ============ -->
+    <section id="lobby">
+      <h2>Pick a table</h2>
+      <p class="lobby-intro">
+        Each card is worth its rank &times; the table stake. Lose with cards still in
+        hand and you pay their value to the winner — get caught holding <em>all 13</em>
+        and you pay <strong>triple</strong>. You must keep a bankroll of 3&times; the
+        table's max payout to sit.
+      </p>
+      <div id="table-list"></div>
+      <div class="lobby-foot">
+        <button id="btn-reset" type="button">Reset bankroll</button>
+      </div>
+    </section>
+
+    <!-- ============ GAME ============ -->
+    <section id="game" hidden>
+      <div class="game-grid">
+        <div class="table-area">
+          <div id="table-banner">
+            <button id="btn-leave" type="button" class="ghost">← Lobby</button>
+            <span id="banner-name"></span>
+            <span id="banner-stakes"></span>
+            <span id="banner-risk"></span>
+          </div>
+
+          <div id="roster"></div>
+
+          <canvas id="table" width="960" height="680">
+            Your browser does not support the canvas element.
+          </canvas>
+
+          <div id="controls">
+            <span id="message" class="message">Welcome to High 2s.</span>
+            <div class="buttons">
+              <span id="count" class="count">13 cards</span>
+              <button id="btn-sort" type="button">Sort</button>
+              <button id="btn-hint" type="button">Hint</button>
+              <button id="btn-pass" type="button">Pass</button>
+              <button id="btn-play" type="button" class="primary">Play</button>
+            </div>
+          </div>
+        </div>
+
+        <aside id="history">
+          <h3>Table history</h3>
+          <div id="history-list"><p class="hist-empty">No hands played yet.</p></div>
+        </aside>
+      </div>
+
+      <!-- settlement overlay shown at game end -->
+      <div id="settlement" hidden>
+        <div class="settle-card">
+          <h3 id="settle-title">Game over</h3>
+          <table id="settle-rows"></table>
+          <p id="settle-delta" class="settle-delta"></p>
+          <div class="settle-buttons">
+            <button id="btn-again" type="button" class="primary">Play again</button>
+            <button id="btn-tolobby" type="button">Back to lobby</button>
+          </div>
+        </div>
+      </div>
+
+      <details class="rules">
+        <summary>How to play</summary>
+        <ul>
+          <li><strong>Goal:</strong> be the first to play every card in your hand.</li>
+          <li><strong>Card order (high→low):</strong> 2, A, K, Q, J, 10 … 3.</li>
+          <li><strong>Suit order (high→low):</strong> ♠ Spades, ♥ Hearts, ♣ Clubs, ♦ Diamonds.</li>
+          <li><strong>Opening:</strong> whoever holds the 3♦ leads first and must include it.</li>
+          <li><strong>On your turn:</strong> play a stronger combo of the <em>same shape</em>
+              (single, pair, triple, or 5-card hand) as the one on the table, or pass.</li>
+          <li><strong>5-card hands (low→high):</strong> straight &lt; flush &lt; full house &lt;
+              four-of-a-kind+1 &lt; straight flush.</li>
+          <li><strong>Straights</strong> use consecutive rank values, so the lowest is 3-4-5-6-7
+              and the highest is J-Q-K-A-2 (no A-2-3-4-5 wrap in this build).</li>
+          <li>When everyone else passes, the last player to play leads a new trick with anything.</li>
+          <li><strong>Money:</strong> each card you're left holding costs its value; holding all 13
+              costs triple. The winner collects the lot.</li>
+          <li><strong>Click</strong> a card to select it (it lifts up); then press <strong>Play</strong>.</li>
+          <li><strong>Drag a card up into the centre</strong> to play it — if it's part of your
+              selection, the whole combo plays.</li>
+          <li><strong>Drag</strong> a card sideways to rearrange your hand into your own groups.
+              <strong>Sort</strong> re-orders it by strength again.</li>
+        </ul>
+      </details>
+    </section>
+  </main>
+
+  <!-- load order: model -> rules -> ai -> personas -> game -> economy -> ui -> wiring -->
+  <script src="js/cards.js"></script>
+  <script src="js/hands.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/personalities.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/economy.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
