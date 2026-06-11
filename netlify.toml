@@ -1,0 +1,9 @@
+# Netlify configuration
+# Static site — no build step. Files are served from the repo root.
+
+[build]
+  publish = "."
+  command = ""
+
+# SPA / direct-link fallback is unnecessary for a multi-page static site,
+# so no redirects are defined. Add a [[redirects]] block here if needed.
