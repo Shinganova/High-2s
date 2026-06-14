@@ -186,7 +186,7 @@
 
   // --- opponents -------------------------------------------------------------
 
-  UI.prototype.drawOpponent = function (player, anchor, isTurn) {
+  UI.prototype.drawOpponent = function (player, anchor, isTurn, bankroll) {
     const count = player.hand.length;
 
     // fan of card backs (anchor.fx/fy is the fan centre)
@@ -203,19 +203,28 @@
       }
     }
 
-    this.drawPlayerPanel(player.name, count, anchor.px, anchor.py, isTurn, player.finished);
+    this.drawPlayerPanel(player.name, count, anchor.px, anchor.py, isTurn, player.finished,
+      { bankroll: bankroll });
   };
 
   // A solid player panel: avatar + name + a count chip, with a gold glow when
-  // it's that player's turn.
-  UI.prototype.drawPlayerPanel = function (name, count, cx, cy, isTurn, finished) {
+  // it's that player's turn. opts.bankroll (a preformatted "$1,234" string)
+  // adds the player's bankroll in gold beside the name — used for the human.
+  UI.prototype.drawPlayerPanel = function (name, count, cx, cy, isTurn, finished, opts) {
     const ctx = this.ctx;
+    opts = opts || {};
+    const bankText = opts.bankroll || null;
     ctx.save();
 
     const AV = 30, padL = 9, gap = 9, chipW = 28, padR = 9, panelH = 44;
     ctx.font = 'bold 15px system-ui, sans-serif';
     const nameW = Math.ceil(ctx.measureText(name).width);
-    const panelW = padL + AV + gap + nameW + gap + chipW + padR;
+    let bankW = 0;
+    if (bankText) {
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      bankW = gap + Math.ceil(ctx.measureText(bankText).width);
+    }
+    const panelW = padL + AV + gap + nameW + bankW + gap + chipW + padR;
 
     const margin = 26;
     const x = Math.max(margin, Math.min(this.W - margin - panelW, cx - panelW / 2));
@@ -255,7 +264,15 @@
     ctx.textAlign = 'left';
     ctx.font = 'bold 15px system-ui, sans-serif';
     ctx.fillStyle = isTurn ? '#fff' : '#e8f3ec';
-    ctx.fillText(name, x + padL + AV + gap, midY + 0.5);
+    const nameX = x + padL + AV + gap;
+    ctx.fillText(name, nameX, midY + 0.5);
+
+    // bankroll (gold), shown for the human player
+    if (bankText) {
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillStyle = '#ffd54a';
+      ctx.fillText(bankText, nameX + nameW + gap, midY + 0.5);
+    }
 
     // count chip
     const chipX = x + panelW - padR - chipW, chipH = 26;
@@ -465,6 +482,56 @@
     ctx.restore();
   };
 
+  // --- on-felt action button -------------------------------------------------
+
+  // A large primary action button sitting on the felt directly below the
+  // human's panel/bankroll, so the main action is always reachable (especially
+  // on touch). `state` is { label, kind, enabled } or null to hide it. Records
+  // `this.actionRect` for hit testing.
+  UI.prototype.drawActionButton = function (state) {
+    this.actionRect = null;
+    if (!state) return;
+
+    const ctx = this.ctx;
+    const w = 180, h = 46;
+    const cx = this.W / 2;                 // centred under the player panel
+    const cy = HAND_Y - 56;                // between the panel and the fanned hand
+    const x = cx - w / 2, y = cy - h / 2;
+    const enabled = state.enabled;
+    const pressed = enabled && this.actionPressed;
+
+    ctx.save();
+    if (enabled && !pressed) { ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 4; }
+    roundRect(ctx, x, y + (pressed ? 1.5 : 0), w, h, 14);
+    if (!enabled) ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+    else if (pressed) ctx.fillStyle = '#e6bd2f';
+    else ctx.fillStyle = '#ffd54a';
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = enabled ? '#e6bd2f' : 'rgba(255, 255, 255, 0.18)';
+    roundRect(ctx, x, y + (pressed ? 1.5 : 0), w, h, 14);
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.fillStyle = enabled ? '#14271d' : 'rgba(255, 255, 255, 0.45)';
+    ctx.fillText(state.label, cx, cy + (pressed ? 1.5 : 0) + 0.5);
+    ctx.restore();
+
+    this.actionRect = { x, y, w, h, kind: state.kind, enabled };
+  };
+
+  // Returns the action kind ('play'/'pass') if (px,py) is over the enabled
+  // action button, else null.
+  UI.prototype.actionHitTest = function (px, py) {
+    const r = this.actionRect;
+    if (!r || !r.enabled) return null;
+    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return r.kind;
+    return null;
+  };
+
   // Return the topmost card under (px,py), or null.
   UI.prototype.hitTest = function (px, py) {
     for (let i = this.handRects.length - 1; i >= 0; i--) {
@@ -486,17 +553,24 @@
       2: { px: this.W / 2, py: 48, fx: this.W / 2, fy: 102, dir: 'h' },
       3: { px: this.W - 122, py: 150, fx: this.W - 122, fy: 312, dir: 'v' }
     };
+    const banks = this.bankrolls || [];
     [1, 2, 3].forEach(seat => {
-      this.drawOpponent(game.players[seat], anchors[seat], game.current === seat && game.winner === null);
+      this.drawOpponent(game.players[seat], anchors[seat],
+        game.current === seat && game.winner === null, banks[seat]);
     });
 
     this.drawTable(game);
     if (drag && drag.mode === 'play') this.drawPlayTarget(drag.playCount || 1);
 
-    // human's own panel — drawn before the hand so dragged cards float over it
+    // human's own panel — drawn before the hand so dragged cards float over it.
+    // Raised to leave room for the action button stacked beneath it.
     const yourTurn = game.current === 0 && game.winner === null;
     this.drawPlayerPanel(game.players[0].name, game.players[0].hand.length,
-      this.W / 2, HAND_Y - 52, yourTurn, game.players[0].finished);
+      this.W / 2, HAND_Y - 106, yourTurn, game.players[0].finished,
+      { bankroll: banks[0] });
+
+    // on-felt action button, centred just below the panel (hidden mid play-drag)
+    this.drawActionButton(drag && drag.mode === 'play' ? null : this.action);
 
     this.drawHand(game.players[0].hand, selectedIds, drag);
   };

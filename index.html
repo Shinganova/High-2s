@@ -11,7 +11,27 @@
     <h1>High&nbsp;2<span class="suit-s">s</span> <small>· Big Two</small></h1>
     <p class="tagline">2 &gt; A &gt; K &gt; … &gt; 3 &nbsp;·&nbsp; ♠ &gt; ♥ &gt; ♣ &gt; ♦ &nbsp;·&nbsp; empty your hand first</p>
     <div id="wallet">Bankroll <span id="bankroll">$0</span></div>
+    <div id="jackpot" title="Progressive jackpot — grows every hand. Win it by going out on a straight flush!">
+      🎰 Jackpot <span id="jackpot-amt">$0</span>
+    </div>
+    <div id="profile" hidden>
+      <img id="pf-avatar" alt="" referrerpolicy="no-referrer" hidden />
+      <span id="pf-name"></span>
+      <button id="btn-signout" type="button" class="ghost">Sign out</button>
+    </div>
   </header>
+
+  <!-- ============ LOGIN GATE ============ -->
+  <div id="auth-gate" hidden>
+    <div class="auth-card">
+      <h2>High&nbsp;2<span class="suit-s">s</span></h2>
+      <p class="auth-sub">Sign in to play — your bankroll and stats are saved to your account.</p>
+      <button id="btn-google" type="button" class="primary auth-google">
+        <span class="g-mark">G</span> Sign in with Google
+      </button>
+      <p id="auth-note" class="auth-note"></p>
+    </div>
+  </div>
 
   <main>
     <!-- ============ LOBBY ============ -->
@@ -39,8 +59,6 @@
             <span id="banner-stakes"></span>
             <span id="banner-risk"></span>
           </div>
-
-          <div id="roster"></div>
 
           <canvas id="table" width="960" height="680">
             Your browser does not support the canvas element.
@@ -70,6 +88,7 @@
           <h3 id="settle-title">Game over</h3>
           <table id="settle-rows"></table>
           <p id="settle-delta" class="settle-delta"></p>
+          <p id="settle-jackpot" class="settle-jackpot"></p>
           <div class="settle-buttons">
             <button id="btn-again" type="button" class="primary">Play again</button>
             <button id="btn-tolobby" type="button">Back to lobby</button>
@@ -103,7 +122,8 @@
     </section>
   </main>
 
-  <!-- load order: model -> rules -> ai -> personas -> game -> economy -> ui -> wiring -->
+  <!-- load order: model -> rules -> ai -> personas -> game -> economy -> ui
+       -> firebase config + auth -> wiring -->
   <script src="js/cards.js"></script>
   <script src="js/hands.js"></script>
   <script src="js/ai.js"></script>
@@ -111,6 +131,8 @@
   <script src="js/game.js"></script>
   <script src="js/economy.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

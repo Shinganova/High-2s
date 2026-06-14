@@ -12,12 +12,20 @@
   const AI_DELAY = 750; // ms between AI moves, for readability
 
   let game, ui, selected, drag = null;
+  let actionPress = null;     // 'play'/'pass' while the on-felt button is held
   let hoveredId = null;       // card under the cursor (mouse hover lift)
   let bankroll = 0;
   let currentTable = null;
   let bots = [];              // [{ persona, bankroll }] for seats 1..3
   let history = [];           // newest-first list of played hands / seat changes
   let handNo = 0;
+
+  // account / persistence
+  let profile = null;         // Google profile { uid, name, email, photo }; null = signed out
+  let stats = { handsPlayed: 0 };
+  let jackpot = 0;            // progressive jackpot pool (grows each hand)
+  let jackpotWon = 0;        // amount won from the jackpot in the last hand (0 = none)
+  let saveTimer = null;       // debounce handle for cloud writes
 
   const els = {};
 
@@ -26,6 +34,110 @@
   function money(n) { return Math.round(n).toLocaleString('en-US'); }
 
   function updateWallet() { els.bankroll.textContent = '$' + money(bankroll); }
+  function updateJackpot() { els.jackpot.textContent = '$' + money(jackpot); }
+
+  // ============================ ACCOUNTS =====================================
+  // Google login is REQUIRED. Signed-in players have their bankroll + stats
+  // saved to Firestore (via Big2.auth). There is no guest mode — without a
+  // configured Firebase project the login gate explains what's missing.
+
+  function setupAuth() {
+    const auth = global.Big2.auth;
+
+    els.google.addEventListener('click', () => {
+      if (!auth || !auth.configured) return;
+      setAuthNote('Opening Google sign-in…');
+      auth.signIn().catch(err => setAuthNote(authError(err)));
+    });
+    els.signout.addEventListener('click', onSignOut);
+
+    if (!auth || !auth.configured) {
+      els.google.disabled = true;
+      setAuthNote('Google login isn’t configured yet — add your Firebase keys ' +
+        'in js/firebase-config.js to enable sign-in.');
+    }
+    if (auth) auth.onChange(onAuthChange);
+    showAuthGate();
+  }
+
+  // Fired by Big2.auth on sign-in (profile) and sign-out / signed-out (null).
+  async function onAuthChange(p) {
+    if (p) {
+      profile = p;
+      setAuthNote('Loading your profile…');
+      let data = null;
+      try { data = await global.Big2.auth.loadProfile(); }
+      catch (e) { console.error(e); }
+      if (data && Number.isFinite(data.bankroll)) {
+        bankroll = data.bankroll;
+        stats.handsPlayed = data.handsPlayed || 0;
+        jackpot = Number.isFinite(data.jackpot) ? data.jackpot : 0;
+      } else {                       // first sign-in → seed a fresh profile
+        bankroll = Eco.START;
+        stats.handsPlayed = 0;
+        jackpot = 0;
+        saveProfileNow();
+      }
+      updateJackpot();
+      showProfile();
+      hideAuthGate();
+      showLobby();
+    } else {                         // signed out (or never signed in) → gate
+      profile = null;
+      els.profile.hidden = true;
+      // keep the "not configured" hint; only clear status once sign-in is live
+      if (global.Big2.auth && global.Big2.auth.configured) setAuthNote('');
+      showAuthGate();
+    }
+  }
+
+  function onSignOut() {
+    if (global.Big2.auth) global.Big2.auth.signOut(); // onAuthChange(null) does the UI
+  }
+
+  function showProfile() {
+    els.profile.hidden = false;
+    els.pfName.textContent = (profile && (profile.name || profile.email)) || 'Player';
+    if (profile && profile.photo) { els.pfAvatar.src = profile.photo; els.pfAvatar.hidden = false; }
+    else els.pfAvatar.hidden = true;
+  }
+
+  function showAuthGate() {
+    els.authGate.hidden = false;
+    els.lobby.hidden = true;
+    els.game.hidden = true;
+    els.settlement.hidden = true;
+  }
+  function hideAuthGate() { els.authGate.hidden = true; }
+  function setAuthNote(msg) { els.authNote.textContent = msg || ''; }
+
+  function authError(err) {
+    const code = err && err.code || '';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request')
+      return 'Sign-in cancelled.';
+    if (code === 'auth/unauthorized-domain')
+      return 'This domain isn’t authorized in Firebase (Authentication → Settings → Authorized domains).';
+    return 'Sign-in failed: ' + (err && err.message || code || 'unknown error');
+  }
+
+  // Persist the bankroll + stats to Firestore (debounced so a burst of updates
+  // becomes a single write).
+  function persist() {
+    if (!profile || !global.Big2.auth) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveProfileNow, 400);
+  }
+  function saveProfileNow() {
+    if (!profile || !global.Big2.auth) return;
+    global.Big2.auth.saveProfile({
+      displayName: profile.name,
+      email: profile.email,
+      photoURL: profile.photo,
+      bankroll: Math.round(bankroll),
+      handsPlayed: stats.handsPlayed,
+      jackpot: Math.round(jackpot)
+    }).catch(e => console.error('Cloud save failed:', e));
+  }
 
   // ============================ LOBBY ========================================
 
@@ -88,17 +200,6 @@
     startHand();
   }
 
-  function renderRoster() {
-    els.roster.innerHTML = bots.map(b => `
-      <div class="persona-chip">
-        <div class="pc-top">
-          <span class="pc-name">${b.persona.name}</span>
-          <span class="pc-bank">$${money(b.bankroll)}</span>
-        </div>
-        <div class="pc-tag">${b.persona.tagline}</div>
-      </div>`).join('');
-  }
-
   function renderHistory() {
     if (!history.length) {
       els.historyList.innerHTML = '<p class="hist-empty">No hands played yet.</p>';
@@ -132,7 +233,6 @@
     selected = new Set();
     drag = null;
     hoveredId = null; ui.hoveredId = null;
-    renderRoster();
     render();
 
     const starter = game.players[game.current];
@@ -146,9 +246,28 @@
 
   function render() {
     if (!game) return;
+    // bankrolls by seat: 0 = human, 1..3 = bots
+    ui.bankrolls = [
+      '$' + money(bankroll),
+      bots[0] && '$' + money(bots[0].bankroll),
+      bots[1] && '$' + money(bots[1].bankroll),
+      bots[2] && '$' + money(bots[2].bankroll)
+    ];
+    ui.action = actionState();
     ui.render(game, selected, drag === null ? undefined : drag);
     els.count.textContent = game.players[0].hand.length + ' cards';
     updateRisk();
+  }
+
+  // The on-felt action button mirrors the primary move available to the human:
+  // Play when cards are selected, Pass when leading isn't required and nothing
+  // is picked, otherwise a disabled Play. null hides the button (not your turn).
+  function actionState() {
+    const humanTurn = game && game.current === 0 && game.winner === null;
+    if (!humanTurn) return null;
+    if (selected.size > 0) return { label: 'Play', kind: 'play', enabled: true };
+    if (game.lastPlay !== null) return { label: 'Pass', kind: 'pass', enabled: true };
+    return { label: 'Play', kind: 'play', enabled: false };
   }
 
   function updateRisk() {
@@ -201,6 +320,17 @@
   function onPointerDown(ev) {
     if (!game || drag || game.winner !== null) return;
     const p = canvasPos(ev);
+    // on-felt action button takes priority over card hits
+    const act = ui.actionHitTest(p.x, p.y);
+    if (act) {
+      actionPress = act;
+      ui.actionPressed = true;
+      render();
+      if (ui.canvas.setPointerCapture) {
+        try { ui.canvas.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+      }
+      return;
+    }
     const card = ui.hitTest(p.x, p.y);
     if (!card) return;
     hoveredId = null; ui.hoveredId = null;                       // grabbing supersedes hover
@@ -241,6 +371,11 @@
   }
 
   function onPointerMove(ev) {
+    if (actionPress) {
+      const stillOver = ui.actionHitTest(canvasPos(ev).x, canvasPos(ev).y) === actionPress;
+      if (ui.actionPressed !== stillOver) { ui.actionPressed = stillOver; render(); }
+      return;
+    }
     if (!drag) { updateHover(ev); return; }
     const p = canvasPos(ev);
     drag.curX = p.x; drag.curY = p.y;
@@ -257,6 +392,17 @@
   }
 
   function onPointerUp(ev) {
+    if (actionPress) {
+      const over = ui.actionHitTest(canvasPos(ev).x, canvasPos(ev).y) === actionPress;
+      const kind = actionPress;
+      actionPress = null;
+      ui.actionPressed = false;
+      if (ui.canvas.releasePointerCapture && ev.pointerId != null) {
+        try { ui.canvas.releasePointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+      }
+      if (over) { (kind === 'play' ? onPlay : onPass)(); } else { render(); }
+      return;
+    }
     if (!drag) return;
     const d = drag;
     drag = null;
@@ -359,7 +505,19 @@
     for (let s = 1; s <= 3; s++) {
       bots[s - 1].bankroll = Math.max(0, bots[s - 1].bankroll + result.deltas[s]);
     }
-    Eco.saveBankroll(bankroll);
+    stats.handsPlayed++;
+
+    // progressive jackpot: grows every hand; you hit it by winning on a straight flush
+    jackpot += Eco.jackpotContribution(result.pot);
+    jackpotWon = 0;
+    if (result.winnerSeat === 0 && Eco.isJackpotWin(game.winningCombo)) {
+      jackpotWon = jackpot;
+      bankroll += jackpotWon;
+      jackpot = Eco.JACKPOT_SEED;
+    }
+    updateJackpot();
+
+    persist();
     updateWallet();
 
     // record the hand
@@ -374,7 +532,6 @@
     const departures = replaceBustedBots();
     if (departures.length) history.unshift({ type: 'change', departures });
 
-    renderRoster();
     renderHistory();
     showSettlement(result, departures);
   }
@@ -425,6 +582,16 @@
       ? 'You collected +$' + money(result.humanDelta)
       : 'You paid $' + money(-result.humanDelta);
 
+    if (jackpotWon > 0) {
+      els.settleJackpot.className = 'settle-jackpot won';
+      els.settleJackpot.textContent =
+        '🎰 JACKPOT! Straight-flush finish — you won the $' + money(jackpotWon) + ' jackpot!';
+    } else {
+      els.settleJackpot.className = 'settle-jackpot';
+      els.settleJackpot.textContent =
+        '🎰 Jackpot now $' + money(jackpot) + ' — win on a straight flush to take it.';
+    }
+
     // can the player afford another hand here?
     const canRebuy = bankroll >= Eco.minToSit(currentTable.stake);
     els.again.disabled = !canRebuy;
@@ -445,7 +612,6 @@
     els.bannerName = $('banner-name');
     els.bannerStakes = $('banner-stakes');
     els.bannerRisk = $('banner-risk');
-    els.roster = $('roster');
     els.historyList = $('history-list');
     els.play = $('btn-play');
     els.pass = $('btn-pass');
@@ -458,6 +624,15 @@
     els.settleRows = $('settle-rows');
     els.settleDelta = $('settle-delta');
     els.again = $('btn-again');
+    els.jackpot = $('jackpot-amt');
+    els.settleJackpot = $('settle-jackpot');
+    els.authGate = $('auth-gate');
+    els.google = $('btn-google');
+    els.authNote = $('auth-note');
+    els.profile = $('profile');
+    els.pfName = $('pf-name');
+    els.pfAvatar = $('pf-avatar');
+    els.signout = $('btn-signout');
 
     ui.canvas.addEventListener('pointerdown', onPointerDown);
     ui.canvas.addEventListener('pointermove', onPointerMove);
@@ -484,7 +659,7 @@
     $('btn-tolobby').addEventListener('click', showLobby);
     $('btn-reset').addEventListener('click', () => {
       bankroll = Eco.START;
-      Eco.saveBankroll(bankroll);
+      persist();
       renderLobby();
       updateWallet();
     });
@@ -493,8 +668,7 @@
       if (btn && !btn.disabled) sitDown(btn.dataset.id);
     });
 
-    bankroll = Eco.loadBankroll();
-    showLobby();
+    setupAuth();
   }
 
   if (document.readyState === 'loading') {

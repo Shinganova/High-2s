@@ -42,8 +42,17 @@ Money rules:
 - **Max payout** = the worst one player can lose = `3 × (value of the 13 highest cards)`.
 - **Min to sit** = `3 × max payout` — the reserve you must keep to take a seat.
 
-(All of this lives in `js/economy.js` — stakes, starting bankroll, and the
-multipliers are one-line tweaks.)
+### Progressive jackpot
+
+A personal **progressive jackpot** grows every hand by **5% of that hand's pot**
+and is shown in the header on every screen (lobby and table). You **hit it** by
+winning a hand — going out — on a **straight flush** (the rarest combo): the
+whole jackpot is added to your bankroll and the pool reseeds. The jackpot is
+saved to your account, so it follows you between sessions and tables. (Rate,
+seed, and the winning combo live in `js/economy.js`.)
+
+(All of this lives in `js/economy.js` — stakes, starting bankroll, jackpot, and
+the multipliers are one-line tweaks.)
 
 ## Rules implemented
 
@@ -63,6 +72,36 @@ lowest straight is `3-4-5-6-7` and the highest is `J-Q-K-A-2`. Wheel straights
 (`A-2-3-4-5`, `2-3-4-5-6`) are **not** used. To change this, edit only
 `detectStraight()` in `js/hands.js`.
 
+## Accounts & cloud save (Firebase)
+
+**Google sign-in is required to play.** Your bankroll, profile, and hands-played
+are saved to your account (Firestore) and follow you across devices. There is no
+guest mode — the app must be wired to a Firebase project before anyone can play.
+
+Setup (free, one time):
+
+1. Create a project at <https://console.firebase.google.com>.
+2. Add a **Web App** (the `</>` icon) and copy its config into
+   `js/firebase-config.js` (replacing the `REPLACE_WITH_…` placeholders).
+3. **Authentication → Sign-in method →** enable **Google**.
+4. **Firestore Database →** create a database, then publish the rules in
+   `firestore.rules` (each user can read/write only their own `users/{uid}` doc).
+5. **Authentication → Settings → Authorized domains:** add `localhost` and your
+   deploy domain (e.g. `your-site.netlify.app`).
+
+Until these keys are filled in, the login gate shows a "not configured" message
+and the game can't be entered.
+
+Data model — one document per user at `users/{uid}`:
+
+```
+{ displayName, email, photoURL, bankroll, handsPlayed, jackpot, updatedAt }
+```
+
+The SDK loads lazily from Google's CDN, only once a real config is present.
+Sign-in uses a popup, so test over `http://localhost` (a server, not `file://`)
+— see **Play** above.
+
 ## Project layout
 
 ```
@@ -75,7 +114,10 @@ js/personalities.js    named opponents with play-style traits
 js/game.js             state machine: turns, tricks, passing, win, AI context
 js/economy.js          card values, payouts, settlement, bankroll persistence
 js/ui.js               Canvas rendering + click / drag-reorder + card values
+js/firebase-config.js  YOUR Firebase web-app keys (placeholder by default)
+js/auth.js             Google sign-in + Firestore facade (window.Big2.auth)
 js/main.js             lobby flow, bankroll, turn loop, settlement, input
+firestore.rules        per-user Firestore security rules
 test/engine.test.js    rules-engine tests
 test/ai.test.js        AI behaviour tests
 test/drag.test.js      hand drag-reorder math tests
@@ -97,7 +139,7 @@ node test/economy.test.js     # card values, payouts, settlement
 Each table seats **three named personalities** (`js/personalities.js`), drawn at
 random per sitting so the line-up varies — Steady Eddie, Reckless Rae, Bluffer
 Bo, The Professor, Lucky Lou, Granny Smith, Hot-Hand Hank, Cool Hand Kim. Their
-names and one-line styles are shown above the table.
+names are shown on each seat's panel at the table.
 
 Personalities aren't cosmetic — their traits change how they play on top of the
 table's skill tier:
@@ -115,8 +157,8 @@ just different labels.
 
 ### Bot bankrolls & bust-outs
 
-Each opponent sits down with **their own bankroll** (shown next to their name in
-the roster). Settlement is full and zero-sum: the winner collects from every
+Each opponent sits down with **their own bankroll** (shown on their seat panel at
+the table). Settlement is full and zero-sum: the winner collects from every
 loser, so bots gain and lose money hand to hand. When a bot's bankroll falls
 **below the table's minimum buy-in, they bust out and leave**, and a fresh
 opponent with a different name takes the empty seat. The **Table history** side
