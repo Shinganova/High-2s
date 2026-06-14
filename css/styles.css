@@ -56,19 +56,33 @@ header h1 .suit-s { color: var(--gold); }
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- progressive jackpot ---------- */
-#jackpot {
-  margin-top: 6px;
-  font-size: 14px;
-  color: #ffe9b0;
+/* ---------- progressive jackpots ---------- */
+#jackpots {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 10px;
+}
+#jackpots .jp {
+  font-size: 13px;
   letter-spacing: 0.2px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
 }
-#jackpot #jackpot-amt {
+#jackpots .jp span {
   font-weight: 800;
-  color: var(--gold);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 10px rgba(255, 213, 74, 0.45);
 }
+.jp-main { color: #ffe9b0; }
+.jp-main span { color: var(--gold); text-shadow: 0 0 10px rgba(255, 213, 74, 0.45); }
+.jp-golden { color: #ffe1a0; border-color: rgba(255, 200, 90, 0.45); }
+.jp-golden span { color: #ffcf5a; text-shadow: 0 0 10px rgba(255, 190, 70, 0.5); }
+.jp-emerald { color: #b9f3d2; border-color: rgba(80, 220, 150, 0.45); }
+.jp-emerald span { color: #4fe39a; text-shadow: 0 0 10px rgba(80, 230, 150, 0.5); }
 
 .settle-jackpot {
   margin: 0 0 14px;
@@ -292,6 +306,16 @@ button.ghost {
   padding: 5px 9px;
   border-left: 3px solid rgba(255, 200, 110, 0.5);
   background: rgba(255, 200, 110, 0.06);
+  border-radius: 5px;
+}
+
+.hist-dragon {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #6ee7a0;
+  padding: 6px 9px;
+  border-left: 3px solid rgba(110, 231, 160, 0.7);
+  background: rgba(110, 231, 160, 0.08);
   border-radius: 5px;
 }
 

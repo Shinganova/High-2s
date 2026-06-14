@@ -23,9 +23,66 @@
   // account / persistence
   let profile = null;         // Google profile { uid, name, email, photo }; null = signed out
   let stats = { handsPlayed: 0 };
-  let jackpot = 0;            // progressive jackpot pool (grows each hand)
-  let jackpotWon = 0;        // amount won from the jackpot in the last hand (0 = none)
+  // Progressive jackpots are SHARED across all players (one global Firestore
+  // doc). These locals mirror the latest live snapshot for display + payout.
+  let jackpot = 0;            // main jackpot — won by going out on a straight flush
+  let jackpotGolden = 0;     // Golden Dragon — won on a full-straight starting hand
+  let jackpotEmerald = 0;    // Emerald Dragon — won on a full-straight-flush starting hand
+  let jackpotWon = 0;        // amount won from the MAIN jackpot last hand (0 = none)
+  let jpUnsub = null;        // unsubscribe handle for the live jackpot subscription
   let saveTimer = null;       // debounce handle for cloud writes
+
+  function jackpotSeeds() {
+    return {
+      jackpot: Eco.JACKPOT_SEED,
+      jackpotGolden: Eco.GOLDEN_SEED,
+      jackpotEmerald: Eco.EMERALD_SEED
+    };
+  }
+
+  // Live snapshot of the shared pools → update locals + header.
+  function onJackpots(data) {
+    if (Number.isFinite(data.jackpot)) jackpot = data.jackpot;
+    if (Number.isFinite(data.jackpotGolden)) jackpotGolden = data.jackpotGolden;
+    if (Number.isFinite(data.jackpotEmerald)) jackpotEmerald = data.jackpotEmerald;
+    updateJackpot();
+  }
+
+  function subscribeJackpots() {
+    if (!global.Big2.auth || !global.Big2.auth.watchJackpots) return;
+    if (jpUnsub) { jpUnsub(); jpUnsub = null; }
+    // start from seeds for display until the first snapshot arrives
+    const s = jackpotSeeds();
+    jackpot = s.jackpot; jackpotGolden = s.jackpotGolden; jackpotEmerald = s.jackpotEmerald;
+    updateJackpot();
+    Promise.resolve(global.Big2.auth.watchJackpots(s, onJackpots))
+      .then(unsub => { jpUnsub = unsub; })
+      .catch(e => console.error('Jackpot subscribe failed:', e));
+  }
+
+  function unsubscribeJackpots() {
+    if (jpUnsub) { jpUnsub(); jpUnsub = null; }
+  }
+
+  // Contribute to the shared pools (server-side atomic increment). The live
+  // snapshot reflects the new totals; nothing to update locally here.
+  function growJackpots(deltas) {
+    if (global.Big2.auth && global.Big2.auth.growJackpots) {
+      global.Big2.auth.growJackpots(deltas).catch(e => console.error('Jackpot grow failed:', e));
+    }
+  }
+
+  // Claim a shared pool: reset it to its seed. Caller has already added the
+  // winnings to the bankroll. Optimistically reset the local mirror too.
+  function claimJackpot(field, seed) {
+    if (field === 'jackpot') jackpot = seed;
+    else if (field === 'jackpotGolden') jackpotGolden = seed;
+    else if (field === 'jackpotEmerald') jackpotEmerald = seed;
+    updateJackpot();
+    if (global.Big2.auth && global.Big2.auth.resetJackpot) {
+      global.Big2.auth.resetJackpot(field, seed).catch(e => console.error('Jackpot reset failed:', e));
+    }
+  }
 
   const els = {};
 
@@ -34,7 +91,11 @@
   function money(n) { return Math.round(n).toLocaleString('en-US'); }
 
   function updateWallet() { els.bankroll.textContent = '$' + money(bankroll); }
-  function updateJackpot() { els.jackpot.textContent = '$' + money(jackpot); }
+  function updateJackpot() {
+    els.jpMain.textContent = '$' + money(jackpot);
+    els.jpGolden.textContent = '$' + money(jackpotGolden);
+    els.jpEmerald.textContent = '$' + money(jackpotEmerald);
+  }
 
   // ============================ ACCOUNTS =====================================
   // Google login is REQUIRED. Signed-in players have their bankroll + stats
@@ -71,19 +132,18 @@
       if (data && Number.isFinite(data.bankroll)) {
         bankroll = data.bankroll;
         stats.handsPlayed = data.handsPlayed || 0;
-        jackpot = Number.isFinite(data.jackpot) ? data.jackpot : 0;
       } else {                       // first sign-in → seed a fresh profile
         bankroll = Eco.START;
         stats.handsPlayed = 0;
-        jackpot = 0;
         saveProfileNow();
       }
-      updateJackpot();
+      subscribeJackpots();           // shared pools, live across all players
       showProfile();
       hideAuthGate();
       showLobby();
     } else {                         // signed out (or never signed in) → gate
       profile = null;
+      unsubscribeJackpots();
       els.profile.hidden = true;
       // keep the "not configured" hint; only clear status once sign-in is live
       if (global.Big2.auth && global.Big2.auth.configured) setAuthNote('');
@@ -134,8 +194,7 @@
       email: profile.email,
       photoURL: profile.photo,
       bankroll: Math.round(bankroll),
-      handsPlayed: stats.handsPlayed,
-      jackpot: Math.round(jackpot)
+      handsPlayed: stats.handsPlayed
     }).catch(e => console.error('Cloud save failed:', e));
   }
 
@@ -211,6 +270,9 @@
           `<div class="hist-change">${d.left} busted out — ${d.joined} takes the seat.</div>`
         ).join('');
       }
+      if (h.type === 'dragon') {
+        return `<div class="hist-dragon">🐉 ${h.name} hit — you won $${money(h.won)}!</div>`;
+      }
       const youCls = h.humanDelta >= 0 ? 'up' : 'down';
       const youTxt = h.humanDelta >= 0 ? '+$' + money(h.humanDelta) : '−$' + money(-h.humanDelta);
       return `<div class="hist-row">
@@ -235,13 +297,42 @@
     hoveredId = null; ui.hoveredId = null;
     render();
 
+    const dragonMsg = checkStartingDragons();   // may pay a Dragon jackpot
     const starter = game.players[game.current];
-    setMessage(starter.isHuman
+    setMessage(dragonMsg || (starter.isHuman
       ? 'You hold the 3♦ — lead it to open the hand.'
-      : starter.name + ' holds the 3♦ and opens.');
+      : starter.name + ' holds the 3♦ and opens.'));
 
     updateButtons();
     maybeAITurn();
+  }
+
+  // Pay a Dragon jackpot if the human's DEALT hand qualifies. Emerald (full
+  // straight flush) outranks Golden (full straight). Returns an announcement
+  // message, or null. The hand still plays out normally afterwards.
+  function checkStartingDragons() {
+    const hand = game.players[0].hand;
+    let msg = null;
+    if (Eco.isFullStraightFlush(hand)) {
+      const won = jackpotEmerald;
+      bankroll += won; claimJackpot('jackpotEmerald', Eco.EMERALD_SEED);
+      recordDragon('Emerald Dragon', won);
+      msg = '🐉💚 EMERALD DRAGON! A full straight flush dealt to you — you won the $' +
+        money(won) + ' Emerald Dragon jackpot!';
+    } else if (Eco.isFullStraight(hand)) {
+      const won = jackpotGolden;
+      bankroll += won; claimJackpot('jackpotGolden', Eco.GOLDEN_SEED);
+      recordDragon('Golden Dragon', won);
+      msg = '🐉👑 GOLDEN DRAGON! A full straight dealt to you — you won the $' +
+        money(won) + ' Golden Dragon jackpot!';
+    }
+    if (msg) { updateWallet(); persist(); }
+    return msg;
+  }
+
+  function recordDragon(name, won) {
+    history.unshift({ type: 'dragon', name: name, won: won });
+    renderHistory();
   }
 
   function render() {
@@ -507,13 +598,18 @@
     }
     stats.handsPlayed++;
 
-    // progressive jackpot: grows every hand; you hit it by winning on a straight flush
-    jackpot += Eco.jackpotContribution(result.pot);
+    // the SHARED progressive jackpots all grow every hand (the dragons are hit
+    // on the STARTING hand, checked in startHand; the main jackpot is hit here).
+    growJackpots({
+      jackpot: Eco.jackpotContribution(result.pot, Eco.JACKPOT_RATE),
+      jackpotGolden: Eco.jackpotContribution(result.pot, Eco.GOLDEN_RATE),
+      jackpotEmerald: Eco.jackpotContribution(result.pot, Eco.EMERALD_RATE)
+    });
     jackpotWon = 0;
     if (result.winnerSeat === 0 && Eco.isJackpotWin(game.winningCombo)) {
-      jackpotWon = jackpot;
+      jackpotWon = jackpot;           // current shared-pool value (from snapshot)
       bankroll += jackpotWon;
-      jackpot = Eco.JACKPOT_SEED;
+      claimJackpot('jackpot', Eco.JACKPOT_SEED);
     }
     updateJackpot();
 
@@ -624,7 +720,9 @@
     els.settleRows = $('settle-rows');
     els.settleDelta = $('settle-delta');
     els.again = $('btn-again');
-    els.jackpot = $('jackpot-amt');
+    els.jpMain = $('jp-main');
+    els.jpGolden = $('jp-golden');
+    els.jpEmerald = $('jp-emerald');
     els.settleJackpot = $('settle-jackpot');
     els.authGate = $('auth-gate');
     els.google = $('btn-google');

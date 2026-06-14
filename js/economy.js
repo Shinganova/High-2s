@@ -85,18 +85,36 @@
   ];
   function tableById(id) { return TABLES.find(t => t.id === id) || null; }
 
-  // ---- progressive jackpot --------------------------------------------------
-  // A pool that grows every hand by a slice of that hand's pot, and is hit when
-  // the player wins a hand by going out on a STRAIGHT FLUSH (the rarest combo).
-  const JACKPOT_RATE = 0.05;  // share of each hand's pot added to the jackpot
-  const JACKPOT_SEED = 0;     // jackpot value after someone hits it
+  // ---- progressive jackpots -------------------------------------------------
+  // Each pool grows every hand by a slice of that hand's pot. There are three:
+  //
+  //   Jackpot        — hit by WINNING a hand on a straight flush (rarest combo).
+  //   Golden Dragon  — hit when your STARTING hand is a full 13-rank straight
+  //                    (one card of every rank — a Big Two "dragon").
+  //   Emerald Dragon — hit when your STARTING hand is a full single-suit
+  //                    straight flush (the entire suit). This implies a full
+  //                    straight too, so it takes precedence over Golden Dragon.
+  const JACKPOT_RATE = 0.05;  // main jackpot share of pot
+  const JACKPOT_SEED = 0;
+  const GOLDEN_RATE = 0.04,  GOLDEN_SEED = 3000;    // dealt a full straight
+  const EMERALD_RATE = 0.03, EMERALD_SEED = 10000;  // dealt a full straight flush
 
-  function jackpotContribution(pot) {
-    return Math.max(1, Math.round(pot * JACKPOT_RATE));
+  function jackpotContribution(pot, rate) {
+    return Math.max(1, Math.round(pot * (rate || JACKPOT_RATE)));
   }
   // combo shape comes from hands.js: a straight flush is type 5 (FIVE), cat 4.
   function isJackpotWin(combo) {
     return !!(combo && combo.type === 5 && combo.cat === 4);
+  }
+  // A full hand (13 cards) holding one of every rank = a full straight.
+  function isFullStraight(hand) {
+    return hand.length === FULL_HAND &&
+      new Set(hand.map(c => c.rank)).size === FULL_HAND;
+  }
+  // A full hand all of one suit = the whole suit = a full straight flush.
+  function isFullStraightFlush(hand) {
+    return hand.length === FULL_HAND &&
+      new Set(hand.map(c => c.suit)).size === 1;
   }
 
   // ---- bankroll persistence -------------------------------------------------
@@ -117,6 +135,7 @@
   global.Big2.economy = {
     FULL_HAND, TRIPLE, cardValue, handValue, topHandValue, maxPayout, minToSit,
     penalty, settle, TABLES, tableById, START, loadBankroll, saveBankroll,
-    JACKPOT_RATE, JACKPOT_SEED, jackpotContribution, isJackpotWin
+    JACKPOT_RATE, JACKPOT_SEED, GOLDEN_RATE, GOLDEN_SEED, EMERALD_RATE, EMERALD_SEED,
+    jackpotContribution, isJackpotWin, isFullStraight, isFullStraightFlush
   };
 })(window);

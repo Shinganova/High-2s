@@ -88,6 +88,39 @@
       const ref = fb.F.doc(fb.db, 'users', current.uid);
       const payload = Object.assign({}, data, { updatedAt: fb.F.serverTimestamp() });
       await fb.F.setDoc(ref, payload, { merge: true });
+    },
+
+    // --- shared progressive jackpots (one global doc, jackpots/global) -------
+
+    // Live-subscribe to the global jackpot pools. `seeds` initialises the doc
+    // if it doesn't exist yet. `cb` receives the pool object on every change.
+    // Returns an unsubscribe function (or a no-op).
+    watchJackpots: async function (seeds, cb) {
+      const x = await ensure();
+      const ref = x.F.doc(x.db, 'jackpots', 'global');
+      try {
+        const snap = await x.F.getDoc(ref);
+        if (!snap.exists()) await x.F.setDoc(ref, seeds, { merge: true });
+      } catch (e) { console.error('Jackpot init failed:', e); }
+      return x.F.onSnapshot(ref, s => { if (s.exists()) cb(s.data()); },
+        e => console.error('Jackpot watch failed:', e));
+    },
+
+    // Atomically add to the shared pools: deltas = { field: amount, ... }.
+    growJackpots: async function (deltas) {
+      const x = await ensure();
+      const ref = x.F.doc(x.db, 'jackpots', 'global');
+      const upd = {};
+      for (const k in deltas) upd[k] = x.F.increment(deltas[k]);
+      await x.F.setDoc(ref, upd, { merge: true });
+    },
+
+    // Reset one pool to its seed (called when a player wins it).
+    resetJackpot: async function (field, seed) {
+      const x = await ensure();
+      const ref = x.F.doc(x.db, 'jackpots', 'global');
+      const upd = {}; upd[field] = seed;
+      await x.F.setDoc(ref, upd, { merge: true });
     }
   };
 })(window);

@@ -42,16 +42,31 @@ Money rules:
 - **Max payout** = the worst one player can lose = `3 × (value of the 13 highest cards)`.
 - **Min to sit** = `3 × max payout` — the reserve you must keep to take a seat.
 
-### Progressive jackpot
+### Progressive jackpots
 
-A personal **progressive jackpot** grows every hand by **5% of that hand's pot**
-and is shown in the header on every screen (lobby and table). You **hit it** by
-winning a hand — going out — on a **straight flush** (the rarest combo): the
-whole jackpot is added to your bankroll and the pool reseeds. The jackpot is
-saved to your account, so it follows you between sessions and tables. (Rate,
-seed, and the winning combo live in `js/economy.js`.)
+Three personal **progressive jackpots** grow every hand (each by a share of that
+hand's pot) and are shown in the header on every screen (lobby and table). They
+are **shared across every player** — one global pool that everyone contributes
+to and any player can hit. The header updates **live** as other people play.
 
-(All of this lives in `js/economy.js` — stakes, starting bankroll, jackpot, and
+| Jackpot | Won when… | Default seed |
+|---------|-----------|--------------|
+| 🎰 **Jackpot** | you **win a hand** by going out on a **straight flush** | $0 |
+| 🐉 **Golden Dragon** | your **starting hand** is a full 13-rank straight (one of every rank) | $3,000 |
+| 🐉 **Emerald Dragon** | your **starting hand** is a full single-suit straight flush (the whole suit) | $10,000 |
+
+The Dragons are checked on the **dealt hand** at the start of each hand; the
+whole shared pool is added to your bankroll and reseeds for everyone. A full
+straight flush is also a full straight, so **Emerald takes precedence** over
+Golden (they never both pay for one deal). Rates, seeds, and the winning
+conditions all live in `js/economy.js`.
+
+The pools live in a single Firestore document, `jackpots/global`. Every hand a
+client **atomically increments** it (`FieldValue.increment`) and subscribes with
+`onSnapshot` for live updates; a win resets the relevant field to its seed.
+Bankroll and stats remain **per-user**; only the jackpot pools are global.
+
+(All of this lives in `js/economy.js` — stakes, starting bankroll, jackpots, and
 the multipliers are one-line tweaks.)
 
 ## Rules implemented
@@ -85,17 +100,19 @@ Setup (free, one time):
    `js/firebase-config.js` (replacing the `REPLACE_WITH_…` placeholders).
 3. **Authentication → Sign-in method →** enable **Google**.
 4. **Firestore Database →** create a database, then publish the rules in
-   `firestore.rules` (each user can read/write only their own `users/{uid}` doc).
+   `firestore.rules` (each user owns their `users/{uid}` doc; any signed-in user
+   can read/contribute to the shared `jackpots/global` pool).
 5. **Authentication → Settings → Authorized domains:** add `localhost` and your
    deploy domain (e.g. `your-site.netlify.app`).
 
 Until these keys are filled in, the login gate shows a "not configured" message
 and the game can't be entered.
 
-Data model — one document per user at `users/{uid}`:
+Data model — a per-user profile plus one shared jackpot document:
 
 ```
-{ displayName, email, photoURL, bankroll, handsPlayed, jackpot, updatedAt }
+users/{uid}     { displayName, email, photoURL, bankroll, handsPlayed, updatedAt }
+jackpots/global { jackpot, jackpotGolden, jackpotEmerald }   // shared by all players
 ```
 
 The SDK loads lazily from Google's CDN, only once a real config is present.
