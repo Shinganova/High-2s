@@ -85,26 +85,20 @@
   ];
   function tableById(id) { return TABLES.find(t => t.id === id) || null; }
 
-  // ---- progressive jackpots -------------------------------------------------
-  // Each pool grows every hand by a slice of that hand's pot. There are three:
+  // ---- progressive jackpots (Dragons) ---------------------------------------
+  // Each pool grows every hand by a slice of that hand's pot, and is hit on the
+  // player's STARTING hand:
   //
-  //   Jackpot        — hit by WINNING a hand on a straight flush (rarest combo).
-  //   Golden Dragon  — hit when your STARTING hand is a full 13-rank straight
-  //                    (one card of every rank — a Big Two "dragon").
-  //   Emerald Dragon — hit when your STARTING hand is a full single-suit
-  //                    straight flush (the entire suit). This implies a full
-  //                    straight too, so it takes precedence over Golden Dragon.
-  const JACKPOT_RATE = 0.05;  // main jackpot share of pot
-  const JACKPOT_SEED = 0;
+  //   Golden Dragon  — a full 13-rank straight (one card of every rank — a Big
+  //                    Two "dragon").
+  //   Emerald Dragon — a full single-suit straight flush (the entire suit).
+  //                    This implies a full straight too, so it takes precedence
+  //                    over Golden Dragon.
   const GOLDEN_RATE = 0.04,  GOLDEN_SEED = 3000;    // dealt a full straight
   const EMERALD_RATE = 0.03, EMERALD_SEED = 10000;  // dealt a full straight flush
 
   function jackpotContribution(pot, rate) {
-    return Math.max(1, Math.round(pot * (rate || JACKPOT_RATE)));
-  }
-  // combo shape comes from hands.js: a straight flush is type 5 (FIVE), cat 4.
-  function isJackpotWin(combo) {
-    return !!(combo && combo.type === 5 && combo.cat === 4);
+    return Math.max(1, Math.round(pot * rate));
   }
   // A full hand (13 cards) holding one of every rank = a full straight.
   function isFullStraight(hand) {
@@ -135,7 +129,7 @@
   global.Big2.economy = {
     FULL_HAND, TRIPLE, cardValue, handValue, topHandValue, maxPayout, minToSit,
     penalty, settle, TABLES, tableById, START, loadBankroll, saveBankroll,
-    JACKPOT_RATE, JACKPOT_SEED, GOLDEN_RATE, GOLDEN_SEED, EMERALD_RATE, EMERALD_SEED,
-    jackpotContribution, isJackpotWin, isFullStraight, isFullStraightFlush
+    GOLDEN_RATE, GOLDEN_SEED, EMERALD_RATE, EMERALD_SEED,
+    jackpotContribution, isFullStraight, isFullStraightFlush
   };
 })(window);

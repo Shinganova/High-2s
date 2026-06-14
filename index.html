@@ -12,14 +12,13 @@
     <p class="tagline">2 &gt; A &gt; K &gt; … &gt; 3 &nbsp;·&nbsp; ♠ &gt; ♥ &gt; ♣ &gt; ♦ &nbsp;·&nbsp; empty your hand first</p>
     <div id="wallet">Bankroll <span id="bankroll">$0</span></div>
     <div id="jackpots">
-      <div class="jp jp-emerald" title="Emerald Dragon — won when your starting hand is a full single-suit straight flush.">
+      <div class="jp jp-emerald" tabindex="0" role="button" aria-label="Emerald Dragon jackpot — how to win">
         🐉 Emerald Dragon <span id="jp-emerald">$0</span>
+        <span class="jp-desc">Hit it when your <strong>dealt hand is a full straight flush</strong> — all 13 cards of a single suit. Shared by all players; the pool is fed by a 3% rake from every hand's pot.</span>
       </div>
-      <div class="jp jp-golden" title="Golden Dragon — won when your starting hand is a full 13-rank straight.">
+      <div class="jp jp-golden" tabindex="0" role="button" aria-label="Golden Dragon jackpot — how to win">
         🐉 Golden Dragon <span id="jp-golden">$0</span>
-      </div>
-      <div class="jp jp-main" title="Jackpot — grows every hand. Won by going out on a straight flush!">
-        🎰 Jackpot <span id="jp-main">$0</span>
+        <span class="jp-desc">Hit it when your <strong>dealt hand is a full straight</strong> — one card of every rank (3 up to 2). Shared by all players; the pool is fed by a 4% rake from every hand's pot.</span>
       </div>
     </div>
     <div id="profile" hidden>
@@ -96,7 +95,6 @@
           <h3 id="settle-title">Game over</h3>
           <table id="settle-rows"></table>
           <p id="settle-delta" class="settle-delta"></p>
-          <p id="settle-jackpot" class="settle-jackpot"></p>
           <div class="settle-buttons">
             <button id="btn-again" type="button" class="primary">Play again</button>
             <button id="btn-tolobby" type="button">Back to lobby</button>

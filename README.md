@@ -42,24 +42,25 @@ Money rules:
 - **Max payout** = the worst one player can lose = `3 × (value of the 13 highest cards)`.
 - **Min to sit** = `3 × max payout` — the reserve you must keep to take a seat.
 
-### Progressive jackpots
+### Dragon jackpots
 
-Three personal **progressive jackpots** grow every hand (each by a share of that
-hand's pot) and are shown in the header on every screen (lobby and table). They
-are **shared across every player** — one global pool that everyone contributes
-to and any player can hit. The header updates **live** as other people play.
+Two **progressive jackpots** are fed by a **rake from every hand's pot** and are
+shown in the header on every screen (lobby and table). They are **shared across
+every player** — one global pool that everyone contributes to and any player can
+hit. The header updates **live** as other people play.
 
-| Jackpot | Won when… | Default seed |
-|---------|-----------|--------------|
-| 🎰 **Jackpot** | you **win a hand** by going out on a **straight flush** | $0 |
-| 🐉 **Golden Dragon** | your **starting hand** is a full 13-rank straight (one of every rank) | $3,000 |
-| 🐉 **Emerald Dragon** | your **starting hand** is a full single-suit straight flush (the whole suit) | $10,000 |
+| Jackpot | Won when… | Rake | Default seed |
+|---------|-----------|------|--------------|
+| 🐉 **Golden Dragon** | your **starting hand** is a full 13-rank straight (one of every rank) | 4% of pot | $3,000 |
+| 🐉 **Emerald Dragon** | your **starting hand** is a full single-suit straight flush (the whole suit) | 3% of pot | $10,000 |
 
-The Dragons are checked on the **dealt hand** at the start of each hand; the
-whole shared pool is added to your bankroll and reseeds for everyone. A full
-straight flush is also a full straight, so **Emerald takes precedence** over
-Golden (they never both pay for one deal). Rates, seeds, and the winning
-conditions all live in `js/economy.js`.
+**The rake** comes out of the pot: losers pay their full penalty, the **winner
+collects the pot minus the rake**, and the rake feeds the two pools. Each jackpot
+is checked on the **dealt hand** at the start of each hand; the whole shared pool
+is added to your bankroll and reseeds for everyone. A full straight flush is also
+a full straight, so **Emerald takes precedence** over Golden (they never both pay
+for one deal). Rates, seeds, and the winning conditions all live in
+`js/economy.js`.
 
 The pools live in a single Firestore document, `jackpots/global`. Every hand a
 client **atomically increments** it (`FieldValue.increment`) and subscribes with
@@ -112,7 +113,7 @@ Data model — a per-user profile plus one shared jackpot document:
 
 ```
 users/{uid}     { displayName, email, photoURL, bankroll, handsPlayed, updatedAt }
-jackpots/global { jackpot, jackpotGolden, jackpotEmerald }   // shared by all players
+jackpots/global { jackpotGolden, jackpotEmerald }   // shared by all players
 ```
 
 The SDK loads lazily from Google's CDN, only once a real config is present.

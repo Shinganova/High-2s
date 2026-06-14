@@ -65,6 +65,7 @@ header h1 .suit-s { color: var(--gold); }
   gap: 6px 10px;
 }
 #jackpots .jp {
+  position: relative;
   font-size: 13px;
   letter-spacing: 0.2px;
   padding: 3px 10px;
@@ -72,31 +73,56 @@ header h1 .suit-s { color: var(--gold); }
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.25);
   white-space: nowrap;
+  cursor: help;
 }
-#jackpots .jp span {
+#jackpots .jp > span:not(.jp-desc) {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-.jp-main { color: #ffe9b0; }
-.jp-main span { color: var(--gold); text-shadow: 0 0 10px rgba(255, 213, 74, 0.45); }
+
+/* the "how to win" popover — shown on hover / keyboard focus (desktop) and
+   while tapped-open (.open, set by JS for touch devices) */
+.jp-desc {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 230px;
+  max-width: 78vw;
+  padding: 9px 11px;
+  background: #11241a;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  color: #dcefe3;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: left;
+  z-index: 30;
+}
+.jp-desc strong { color: #fff; }
+/* little pointer */
+.jp-desc::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: #11241a;
+}
+.jp:hover .jp-desc,
+.jp:focus .jp-desc,
+.jp:focus-within .jp-desc,
+.jp.open .jp-desc { display: block; }
 .jp-golden { color: #ffe1a0; border-color: rgba(255, 200, 90, 0.45); }
 .jp-golden span { color: #ffcf5a; text-shadow: 0 0 10px rgba(255, 190, 70, 0.5); }
 .jp-emerald { color: #b9f3d2; border-color: rgba(80, 220, 150, 0.45); }
 .jp-emerald span { color: #4fe39a; text-shadow: 0 0 10px rgba(80, 230, 150, 0.5); }
-
-.settle-jackpot {
-  margin: 0 0 14px;
-  text-align: center;
-  font-size: 14px;
-  color: #ffe9b0;
-  font-variant-numeric: tabular-nums;
-}
-.settle-jackpot.won {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--gold);
-  text-shadow: 0 0 12px rgba(255, 213, 74, 0.6);
-}
 
 /* ---------- header profile ---------- */
 #profile {
@@ -353,6 +379,7 @@ button.ghost {
 #settle-rows .r-win .r-name { color: var(--gold); }
 #settle-rows .r-amt.pay { color: #ff9b9b; }
 #settle-rows .r-change { color: #e7c98a; font-size: 12.5px; padding-top: 8px; }
+#settle-rows .r-rake { color: #6ee7a0; font-size: 12.5px; text-align: center; }
 .settle-delta {
   margin: 14px 0 16px;
   text-align: center;

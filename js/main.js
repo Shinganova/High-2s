@@ -23,18 +23,15 @@
   // account / persistence
   let profile = null;         // Google profile { uid, name, email, photo }; null = signed out
   let stats = { handsPlayed: 0 };
-  // Progressive jackpots are SHARED across all players (one global Firestore
+  // The Dragon jackpots are SHARED across all players (one global Firestore
   // doc). These locals mirror the latest live snapshot for display + payout.
-  let jackpot = 0;            // main jackpot — won by going out on a straight flush
   let jackpotGolden = 0;     // Golden Dragon — won on a full-straight starting hand
   let jackpotEmerald = 0;    // Emerald Dragon — won on a full-straight-flush starting hand
-  let jackpotWon = 0;        // amount won from the MAIN jackpot last hand (0 = none)
   let jpUnsub = null;        // unsubscribe handle for the live jackpot subscription
   let saveTimer = null;       // debounce handle for cloud writes
 
   function jackpotSeeds() {
     return {
-      jackpot: Eco.JACKPOT_SEED,
       jackpotGolden: Eco.GOLDEN_SEED,
       jackpotEmerald: Eco.EMERALD_SEED
     };
@@ -42,7 +39,6 @@
 
   // Live snapshot of the shared pools → update locals + header.
   function onJackpots(data) {
-    if (Number.isFinite(data.jackpot)) jackpot = data.jackpot;
     if (Number.isFinite(data.jackpotGolden)) jackpotGolden = data.jackpotGolden;
     if (Number.isFinite(data.jackpotEmerald)) jackpotEmerald = data.jackpotEmerald;
     updateJackpot();
@@ -53,7 +49,7 @@
     if (jpUnsub) { jpUnsub(); jpUnsub = null; }
     // start from seeds for display until the first snapshot arrives
     const s = jackpotSeeds();
-    jackpot = s.jackpot; jackpotGolden = s.jackpotGolden; jackpotEmerald = s.jackpotEmerald;
+    jackpotGolden = s.jackpotGolden; jackpotEmerald = s.jackpotEmerald;
     updateJackpot();
     Promise.resolve(global.Big2.auth.watchJackpots(s, onJackpots))
       .then(unsub => { jpUnsub = unsub; })
@@ -75,8 +71,7 @@
   // Claim a shared pool: reset it to its seed. Caller has already added the
   // winnings to the bankroll. Optimistically reset the local mirror too.
   function claimJackpot(field, seed) {
-    if (field === 'jackpot') jackpot = seed;
-    else if (field === 'jackpotGolden') jackpotGolden = seed;
+    if (field === 'jackpotGolden') jackpotGolden = seed;
     else if (field === 'jackpotEmerald') jackpotEmerald = seed;
     updateJackpot();
     if (global.Big2.auth && global.Big2.auth.resetJackpot) {
@@ -92,9 +87,13 @@
 
   function updateWallet() { els.bankroll.textContent = '$' + money(bankroll); }
   function updateJackpot() {
-    els.jpMain.textContent = '$' + money(jackpot);
     els.jpGolden.textContent = '$' + money(jackpotGolden);
     els.jpEmerald.textContent = '$' + money(jackpotEmerald);
+  }
+
+  function closeJackpotDescs() {
+    if (!els.jackpots || !els.jackpots.querySelectorAll) return;
+    els.jackpots.querySelectorAll('.jp.open').forEach(p => p.classList.remove('open'));
   }
 
   // ============================ ACCOUNTS =====================================
@@ -591,6 +590,15 @@
     updateButtons();
     const result = Eco.settle(game, currentTable.stake);
 
+    // JACKPOT RAKE: the Dragon pools are funded from each pot. Losers still pay
+    // their full penalty; the winner collects the pot MINUS the rake, and the
+    // rake (Golden + Emerald shares) feeds the shared jackpots.
+    const rakeGolden = Eco.jackpotContribution(result.pot, Eco.GOLDEN_RATE);
+    const rakeEmerald = Eco.jackpotContribution(result.pot, Eco.EMERALD_RATE);
+    result.rake = rakeGolden + rakeEmerald;
+    result.deltas[result.winnerSeat] -= result.rake;   // winner collects less
+    result.humanDelta = result.deltas[0];
+
     // pay everyone: human (seat 0) and the three bots (seats 1..3)
     bankroll = Math.max(0, bankroll + result.deltas[0]);
     for (let s = 1; s <= 3; s++) {
@@ -598,29 +606,18 @@
     }
     stats.handsPlayed++;
 
-    // the SHARED progressive jackpots all grow every hand (the dragons are hit
-    // on the STARTING hand, checked in startHand; the main jackpot is hit here).
-    growJackpots({
-      jackpot: Eco.jackpotContribution(result.pot, Eco.JACKPOT_RATE),
-      jackpotGolden: Eco.jackpotContribution(result.pot, Eco.GOLDEN_RATE),
-      jackpotEmerald: Eco.jackpotContribution(result.pot, Eco.EMERALD_RATE)
-    });
-    jackpotWon = 0;
-    if (result.winnerSeat === 0 && Eco.isJackpotWin(game.winningCombo)) {
-      jackpotWon = jackpot;           // current shared-pool value (from snapshot)
-      bankroll += jackpotWon;
-      claimJackpot('jackpot', Eco.JACKPOT_SEED);
-    }
-    updateJackpot();
+    // the SHARED Dragon jackpots are fed by the rake taken from this pot (they
+    // are HIT on the STARTING hand, checked in startHand).
+    growJackpots({ jackpotGolden: rakeGolden, jackpotEmerald: rakeEmerald });
 
     persist();
     updateWallet();
 
-    // record the hand
+    // record the hand (winner's take is net of the rake)
     history.unshift({
       n: handNo,
       winnerName: game.players[result.winnerSeat].name,
-      pot: result.pot,
+      pot: result.pot - result.rake,
       humanDelta: result.deltas[0]
     });
 
@@ -659,34 +656,29 @@
       `<tr><td colspan="3" class="r-change">↪ ${d.left} busted out — ${d.joined} sits down</td></tr>`
     ).join('');
 
+    const collected = result.pot - (result.rake || 0);
+    const rakeRow = result.rake
+      ? `<tr><td colspan="3" class="r-rake">🐉 $${money(result.rake)} raked from the pot to the Dragon jackpots</td></tr>`
+      : '';
+
     els.settleRows.innerHTML = result.rows.map(r => {
       const detail = r.winner
         ? '🏆 winner'
         : r.count + ' left' + (r.caughtAll ? ' — all 13, ×3!' : '');
-      const amt = r.winner ? '+$' + money(result.pot) : '−$' + money(r.penalty);
+      const amt = r.winner ? '+$' + money(collected) : '−$' + money(r.penalty);
       const amtClass = r.winner ? '' : 'pay';
       return `<tr class="${r.winner ? 'r-win' : ''}">
                 <td class="r-name">${r.name}</td>
                 <td>${detail}</td>
                 <td class="r-amt ${amtClass}">${amt}</td>
               </tr>`;
-    }).join('') + changeRows;
+    }).join('') + rakeRow + changeRows;
 
     const up = result.humanDelta >= 0;
     els.settleDelta.className = 'settle-delta ' + (up ? 'up' : 'down');
     els.settleDelta.textContent = up
       ? 'You collected +$' + money(result.humanDelta)
       : 'You paid $' + money(-result.humanDelta);
-
-    if (jackpotWon > 0) {
-      els.settleJackpot.className = 'settle-jackpot won';
-      els.settleJackpot.textContent =
-        '🎰 JACKPOT! Straight-flush finish — you won the $' + money(jackpotWon) + ' jackpot!';
-    } else {
-      els.settleJackpot.className = 'settle-jackpot';
-      els.settleJackpot.textContent =
-        '🎰 Jackpot now $' + money(jackpot) + ' — win on a straight flush to take it.';
-    }
 
     // can the player afford another hand here?
     const canRebuy = bankroll >= Eco.minToSit(currentTable.stake);
@@ -720,10 +712,9 @@
     els.settleRows = $('settle-rows');
     els.settleDelta = $('settle-delta');
     els.again = $('btn-again');
-    els.jpMain = $('jp-main');
+    els.jackpots = $('jackpots');
     els.jpGolden = $('jp-golden');
     els.jpEmerald = $('jp-emerald');
-    els.settleJackpot = $('settle-jackpot');
     els.authGate = $('auth-gate');
     els.google = $('btn-google');
     els.authNote = $('auth-note');
@@ -765,6 +756,18 @@
       const btn = ev.target.closest('.tc-sit');
       if (btn && !btn.disabled) sitDown(btn.dataset.id);
     });
+
+    // Jackpot "how to win" popover: hover/focus handles desktop (CSS); tapping a
+    // pill toggles it open on touch devices. Tapping elsewhere closes it.
+    els.jackpots.addEventListener('click', ev => {
+      const pill = ev.target.closest('.jp');
+      if (!pill) return;
+      const open = pill.classList.contains('open');
+      closeJackpotDescs();
+      if (!open) pill.classList.add('open');
+      ev.stopPropagation();
+    });
+    document.addEventListener('click', closeJackpotDescs);
 
     setupAuth();
   }
