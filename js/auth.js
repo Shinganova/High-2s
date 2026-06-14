@@ -92,15 +92,24 @@
 
     // --- shared progressive jackpots (one global doc, jackpots/global) -------
 
-    // Live-subscribe to the global jackpot pools. `seeds` initialises the doc
-    // if it doesn't exist yet. `cb` receives the pool object on every change.
-    // Returns an unsubscribe function (or a no-op).
+    // Live-subscribe to the global jackpot pools. On connect this ensures each
+    // pool is at least its seed (the seed is the floor for a progressive
+    // jackpot) WITHOUT ever lowering a larger accumulated value — so a fresh or
+    // under-seeded doc is repaired, but real winnings are never reset. `cb`
+    // receives the pool object on every change. Returns an unsubscribe fn.
     watchJackpots: async function (seeds, cb) {
       const x = await ensure();
       const ref = x.F.doc(x.db, 'jackpots', 'global');
       try {
-        const snap = await x.F.getDoc(ref);
-        if (!snap.exists()) await x.F.setDoc(ref, seeds, { merge: true });
+        await x.F.runTransaction(x.db, async tx => {
+          const snap = await tx.get(ref);
+          const cur = snap.exists() ? snap.data() : {};
+          const upd = {};
+          for (const k in seeds) {
+            if (!Number.isFinite(cur[k]) || cur[k] < seeds[k]) upd[k] = seeds[k];
+          }
+          if (Object.keys(upd).length) tx.set(ref, upd, { merge: true });
+        });
       } catch (e) { console.error('Jackpot init failed:', e); }
       return x.F.onSnapshot(ref, s => { if (s.exists()) cb(s.data()); },
         e => console.error('Jackpot watch failed:', e));

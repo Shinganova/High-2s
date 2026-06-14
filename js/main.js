@@ -22,11 +22,13 @@
 
   // account / persistence
   let profile = null;         // Google profile { uid, name, email, photo }; null = signed out
+  let profileLoaded = false;  // has the Firestore profile (bankroll/stats) arrived yet?
   let stats = { handsPlayed: 0 };
   // The Dragon jackpots are SHARED across all players (one global Firestore
   // doc). These locals mirror the latest live snapshot for display + payout.
   let jackpotGolden = 0;     // Golden Dragon — won on a full-straight starting hand
   let jackpotEmerald = 0;    // Emerald Dragon — won on a full-straight-flush starting hand
+  let jackpotsReady = false; // has the first live jackpot snapshot arrived?
   let jpUnsub = null;        // unsubscribe handle for the live jackpot subscription
   let saveTimer = null;       // debounce handle for cloud writes
 
@@ -41,15 +43,17 @@
   function onJackpots(data) {
     if (Number.isFinite(data.jackpotGolden)) jackpotGolden = data.jackpotGolden;
     if (Number.isFinite(data.jackpotEmerald)) jackpotEmerald = data.jackpotEmerald;
+    jackpotsReady = true;
     updateJackpot();
   }
 
   function subscribeJackpots() {
     if (!global.Big2.auth || !global.Big2.auth.watchJackpots) return;
     if (jpUnsub) { jpUnsub(); jpUnsub = null; }
-    // start from seeds for display until the first snapshot arrives
+    // show "…" until the first live snapshot arrives — never flash the seed
+    jackpotsReady = false;
     const s = jackpotSeeds();
-    jackpotGolden = s.jackpotGolden; jackpotEmerald = s.jackpotEmerald;
+    jackpotGolden = s.jackpotGolden; jackpotEmerald = s.jackpotEmerald; // payout fallback
     updateJackpot();
     Promise.resolve(global.Big2.auth.watchJackpots(s, onJackpots))
       .then(unsub => { jpUnsub = unsub; })
@@ -58,6 +62,8 @@
 
   function unsubscribeJackpots() {
     if (jpUnsub) { jpUnsub(); jpUnsub = null; }
+    jackpotsReady = false;
+    updateJackpot();
   }
 
   // Contribute to the shared pools (server-side atomic increment). The live
@@ -85,10 +91,12 @@
   function setMessage(msg) { els.message.textContent = msg; }
   function money(n) { return Math.round(n).toLocaleString('en-US'); }
 
-  function updateWallet() { els.bankroll.textContent = '$' + money(bankroll); }
+  function updateWallet() {
+    els.bankroll.textContent = profileLoaded ? '$' + money(bankroll) : '…';
+  }
   function updateJackpot() {
-    els.jpGolden.textContent = '$' + money(jackpotGolden);
-    els.jpEmerald.textContent = '$' + money(jackpotEmerald);
+    els.jpGolden.textContent = jackpotsReady ? '$' + money(jackpotGolden) : '…';
+    els.jpEmerald.textContent = jackpotsReady ? '$' + money(jackpotEmerald) : '…';
   }
 
   function closeJackpotDescs() {
@@ -107,7 +115,10 @@
     els.google.addEventListener('click', () => {
       if (!auth || !auth.configured) return;
       setAuthNote('Opening Google sign-in…');
-      auth.signIn().catch(err => setAuthNote(authError(err)));
+      console.time('[auth] google popup');
+      auth.signIn()
+        .then(() => console.timeEnd('[auth] google popup'))
+        .catch(err => { console.timeEnd('[auth] google popup'); setAuthNote(authError(err)); });
     });
     els.signout.addEventListener('click', onSignOut);
 
@@ -121,33 +132,51 @@
   }
 
   // Fired by Big2.auth on sign-in (profile) and sign-out / signed-out (null).
-  async function onAuthChange(p) {
+  function onAuthChange(p) {
     if (p) {
       profile = p;
-      setAuthNote('Loading your profile…');
-      let data = null;
-      try { data = await global.Big2.auth.loadProfile(); }
-      catch (e) { console.error(e); }
-      if (data && Number.isFinite(data.bankroll)) {
-        bankroll = data.bankroll;
-        stats.handsPlayed = data.handsPlayed || 0;
-      } else {                       // first sign-in → seed a fresh profile
-        bankroll = Eco.START;
-        stats.handsPlayed = 0;
-        saveProfileNow();
-      }
+      profileLoaded = false;
+      bankroll = Eco.START;          // provisional until the real value loads
+      stats.handsPlayed = 0;
+      // Reveal the app immediately — don't make the user wait on a Firestore
+      // read. The lobby's "Sit down" buttons stay disabled until the real
+      // bankroll arrives (loadProfileInBackground re-renders it).
       subscribeJackpots();           // shared pools, live across all players
       showProfile();
       hideAuthGate();
       showLobby();
+      loadProfileInBackground();
     } else {                         // signed out (or never signed in) → gate
       profile = null;
+      profileLoaded = false;
       unsubscribeJackpots();
       els.profile.hidden = true;
       // keep the "not configured" hint; only clear status once sign-in is live
       if (global.Big2.auth && global.Big2.auth.configured) setAuthNote('');
       showAuthGate();
     }
+  }
+
+  // Load the per-user profile (bankroll/stats) after the UI is already shown.
+  async function loadProfileInBackground() {
+    const signedInAs = profile;
+    let data = null;
+    console.time('[auth] profile load');
+    try { data = await global.Big2.auth.loadProfile(); }
+    catch (e) { console.error(e); }
+    console.timeEnd('[auth] profile load');
+    if (profile !== signedInAs) return;   // signed out / switched while loading
+    if (data && Number.isFinite(data.bankroll)) {
+      bankroll = data.bankroll;
+      stats.handsPlayed = data.handsPlayed || 0;
+    } else {                                // first sign-in → seed a fresh profile
+      bankroll = Eco.START;
+      stats.handsPlayed = 0;
+      saveProfileNow();
+    }
+    profileLoaded = true;
+    updateWallet();
+    if (!game) renderLobby();               // enable "Sit down" with the real bankroll
   }
 
   function onSignOut() {
@@ -213,9 +242,11 @@
     els.tableList.innerHTML = Eco.TABLES.map(t => {
       const maxPay = Eco.maxPayout(t.stake);
       const sit = Eco.minToSit(t.stake);
-      const locked = bankroll < sit;
+      const loading = !profileLoaded;        // bankroll not in yet → don't let them sit
+      const locked = loading || bankroll < sit;
       const lo = Eco.cardValue({ rank: 3 }, t.stake);
       const hi = Eco.cardValue({ rank: 15 }, t.stake);
+      const label = loading ? 'Loading…' : (locked ? 'Locked' : 'Sit down');
       return `
         <div class="table-card ${locked ? 'locked' : ''}">
           <span class="tc-tier tier-${t.difficulty}">${t.tier}</span>
@@ -227,9 +258,9 @@
             <dt>Min to sit</dt><dd>$${money(sit)}</dd>
           </dl>
           <button class="tc-sit primary" data-id="${t.id}" ${locked ? 'disabled' : ''}>
-            ${locked ? 'Locked' : 'Sit down'}
+            ${label}
           </button>
-          ${locked ? `<p class="tc-lock">Need $${money(sit)} bankroll to sit</p>` : ''}
+          ${!loading && bankroll < sit ? `<p class="tc-lock">Need $${money(sit)} bankroll to sit</p>` : ''}
         </div>`;
     }).join('');
   }

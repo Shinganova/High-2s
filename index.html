@@ -4,6 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>High 2s — Big Two</title>
+
+  <!-- Warm up DNS/TLS to the Firebase + Google auth/Firestore endpoints so the
+       SDK download, sign-in popup, and first Firestore read start faster. -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://apis.google.com" />
+  <link rel="preconnect" href="https://accounts.google.com" />
+  <link rel="preconnect" href="https://high2s.firebaseapp.com" />
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin />
+
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
