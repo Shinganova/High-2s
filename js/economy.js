@@ -85,6 +85,20 @@
   ];
   function tableById(id) { return TABLES.find(t => t.id === id) || null; }
 
+  // ---- progressive jackpot --------------------------------------------------
+  // A pool that grows every hand by a slice of that hand's pot, and is hit when
+  // the player wins a hand by going out on a STRAIGHT FLUSH (the rarest combo).
+  const JACKPOT_RATE = 0.05;  // share of each hand's pot added to the jackpot
+  const JACKPOT_SEED = 0;     // jackpot value after someone hits it
+
+  function jackpotContribution(pot) {
+    return Math.max(1, Math.round(pot * JACKPOT_RATE));
+  }
+  // combo shape comes from hands.js: a straight flush is type 5 (FIVE), cat 4.
+  function isJackpotWin(combo) {
+    return !!(combo && combo.type === 5 && combo.cat === 4);
+  }
+
   // ---- bankroll persistence -------------------------------------------------
   const KEY = 'big2_bankroll';
   const START = 3000;
@@ -102,6 +116,7 @@
   global.Big2 = global.Big2 || {};
   global.Big2.economy = {
     FULL_HAND, TRIPLE, cardValue, handValue, topHandValue, maxPayout, minToSit,
-    penalty, settle, TABLES, tableById, START, loadBankroll, saveBankroll
+    penalty, settle, TABLES, tableById, START, loadBankroll, saveBankroll,
+    JACKPOT_RATE, JACKPOT_SEED, jackpotContribution, isJackpotWin
   };
 })(window);

@@ -46,6 +46,7 @@
       passCount: 0,            // consecutive passes since last play
       openingMove: true,       // first play of the game (must include 3♦)
       winner: null,
+      winningCombo: null,      // the combo the winner went out on (for jackpot)
       played: [],              // every card played so far (for AI card-tracking)
       difficulty: difficulty || 'hard',
       log: []
@@ -133,6 +134,7 @@
     if (player.hand.length === 0) {
       player.finished = true;
       game.winner = seat;
+      game.winningCombo = combo;
       game.log.push(`${player.name} went out and wins! 🎉`);
       return combo;
     }
