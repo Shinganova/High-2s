@@ -1,0 +1,11 @@
+{
+  "name": "high2s-functions",
+  "description": "Cloud Functions for High 2s — server-owned shared jackpots",
+  "private": true,
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.1.0"
+  }
+}

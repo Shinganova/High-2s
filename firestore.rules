@@ -8,11 +8,13 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Shared progressive jackpots — any signed-in player may read and
-    // contribute to / reset the global pool. (Play money; values are not
-    // trusted as authoritative for anything but display.)
+    // Shared progressive jackpots — any signed-in player may READ the live pool,
+    // but only Cloud Functions (admin SDK, which bypasses these rules) may WRITE
+    // it. This makes the shared pool tamper-proof: clients can't set arbitrary
+    // values; all growth/payout goes through the validated callable functions.
     match /jackpots/{id} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if false;
     }
   }
 }

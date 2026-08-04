@@ -74,14 +74,14 @@
     }
   }
 
-  // Claim a shared pool: reset it to its seed. Caller has already added the
-  // winnings to the bankroll. Optimistically reset the local mirror too.
+  // Claim a shared pool: the server resets it to its seed. Caller has already
+  // added the winnings to the bankroll. Optimistically reset the local mirror.
   function claimJackpot(field, seed) {
     if (field === 'jackpotGolden') jackpotGolden = seed;
     else if (field === 'jackpotEmerald') jackpotEmerald = seed;
     updateJackpot();
     if (global.Big2.auth && global.Big2.auth.resetJackpot) {
-      global.Big2.auth.resetJackpot(field, seed).catch(e => console.error('Jackpot reset failed:', e));
+      global.Big2.auth.resetJackpot(field).catch(e => console.error('Jackpot reset failed:', e));
     }
   }
 

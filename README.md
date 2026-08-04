@@ -62,10 +62,18 @@ a full straight, so **Emerald takes precedence** over Golden (they never both pa
 for one deal). Rates, seeds, and the winning conditions all live in
 `js/economy.js`.
 
-The pools live in a single Firestore document, `jackpots/global`. Every hand a
-client **atomically increments** it (`FieldValue.increment`) and subscribes with
-`onSnapshot` for live updates; a win resets the relevant field to its seed.
-Bankroll and stats remain **per-user**; only the jackpot pools are global.
+The pools live in a single Firestore document, `jackpots/global`. Clients **read**
+it live (`onSnapshot`) but **cannot write** it — the security rules deny client
+writes. All growth and payouts go through **Cloud Functions** (`functions/`):
+
+- `contributeJackpots({jackpotGolden, jackpotEmerald})` — adds the per-hand rake
+  inside a transaction, **clamped** to a per-field cap and floored at the seed.
+- `claimJackpot({field})` — resets a pool to its seed and reports the winnings.
+
+This makes the shared pool **tamper-proof**: one player can't set it to arbitrary
+values for everyone. Bankroll and stats remain **per-user** (client-written; only
+affect that player). See `functions/index.js`. Deploying the functions requires
+the Firebase **Blaze** plan (see setup below).
 
 (All of this lives in `js/economy.js` — stakes, starting bankroll, jackpots, and
 the multipliers are one-line tweaks.)
@@ -100,14 +108,38 @@ Setup (free, one time):
 2. Add a **Web App** (the `</>` icon) and copy its config into
    `js/firebase-config.js` (replacing the `REPLACE_WITH_…` placeholders).
 3. **Authentication → Sign-in method →** enable **Google**.
-4. **Firestore Database →** create a database, then publish the rules in
-   `firestore.rules` (each user owns their `users/{uid}` doc; any signed-in user
-   can read/contribute to the shared `jackpots/global` pool).
+4. **Firestore Database →** create a database.
 5. **Authentication → Settings → Authorized domains:** add `localhost` and your
    deploy domain (e.g. `your-site.netlify.app`).
+6. **Deploy the rules + Cloud Functions** (the functions own the shared jackpot
+   pool). This step needs the **Blaze** plan — see below.
 
 Until these keys are filled in, the login gate shows a "not configured" message
 and the game can't be entered.
+
+### Cloud Functions (shared jackpots)
+
+The shared jackpot pool is written only by Cloud Functions, so clients can't
+tamper with it. Deploying functions requires the Firebase **Blaze** (pay-as-you-go)
+plan — it has a large free tier, so this app should cost ~$0, but a billing
+account is required.
+
+```sh
+npm install -g firebase-tools      # once
+firebase login                     # once
+cd functions && npm install && cd ..
+firebase deploy --only functions,firestore:rules
+```
+
+`firebase.json` and `.firebaserc` (project `high2s`) are included. The deploy
+publishes `firestore.rules` and the two callables (`contributeJackpots`,
+`claimJackpot`) to the default region **us-central1** (the client expects that
+region — keep it unless you also change `getFunctions` in `js/auth.js`).
+
+> Want to avoid Blaze? You can instead make the jackpots client-written again
+> (revert `js/auth.js` to direct Firestore writes and allow `write` on
+> `jackpots/{id}` in `firestore.rules`) — simpler, but the shared pool is then
+> tamperable.
 
 Data model — a per-user profile plus one shared jackpot document:
 
@@ -135,7 +167,11 @@ js/ui.js               Canvas rendering + click / drag-reorder + card values
 js/firebase-config.js  YOUR Firebase web-app keys (placeholder by default)
 js/auth.js             Google sign-in + Firestore facade (window.Big2.auth)
 js/main.js             lobby flow, bankroll, turn loop, settlement, input
-firestore.rules        per-user Firestore security rules
+functions/index.js     Cloud Functions: server-owned shared jackpot pool
+functions/package.json Cloud Functions dependencies (firebase-admin/functions)
+firebase.json          Firebase deploy config (firestore rules + functions)
+.firebaserc            Firebase project alias (high2s)
+firestore.rules        security rules: per-user docs + read-only shared jackpots
 test/engine.test.js    rules-engine tests
 test/ai.test.js        AI behaviour tests
 test/drag.test.js      hand drag-reorder math tests
